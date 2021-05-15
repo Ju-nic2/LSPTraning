@@ -8,5 +8,8 @@ gcc 9.3.0
 
 # Myls
 ## ls 명령어, -l,-t,-a,-i 옵션 구현
+### 헤더 file flags.h
+1. 데이터 저장 구조체 
+2. 옵션 구분에 필요한 Flags
 ### 입력된 Argument Parsing 
 들어온 argv 배열을 전부 탐색 하므로, 명령 입력 순서는 상관없음
