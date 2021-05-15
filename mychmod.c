@@ -21,7 +21,7 @@ void setGruopPermition(char op, char* permition, mode_t* fmode);
 void setOtherPermition(char op, char* permition, mode_t* fmode);
 void setAllPermition(char op, char* permition, mode_t* fmode);
 
-//change permition function
+//change permition functions
 void changePermition(char **argv, int start, int end,int flag,int check);
 char* printPermition(mode_t mode);
 
