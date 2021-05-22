@@ -7,7 +7,16 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#include <pthread.h>
 
+struct ThreadArgvs{
+	int startline;
+	int endline;
+	int rows;
+	int cols;
+	char **nowMatrix;
+	char **nextMatrix;
+};
 struct LocationInfo{
 	int x;
 	int y;
@@ -19,8 +28,8 @@ struct LocationInfo{
 #define NAMEBUFSIZE 512
 
 void sequentialOperation(int generation);
-void multiProcessOperation(int generation,int processnum);
-void multiThreadOperation();
+void multiProcessOperation(int generation, int processnum);
+void multiThreadOperation(int generation, int threadnum);
 
 //seperate to operation.c
 void operation(char **current, char **next, int m, int n, int startline,int endline);
@@ -39,6 +48,9 @@ void deleteMatrix(char **matrix, int rows);
 void rowdistribution(int *arr,int arrsize,int rows);
 
 
+void initializeThreadArgv(struct ThreadArgvs *ta,int startline,int endline,int m, int n, char **m1,char **m2);
+void* threadMethod(void* argv);
+
 int main(int argc, char **argv)
 {
 	
@@ -50,6 +62,7 @@ int main(int argc, char **argv)
 		printf("1. exit\n");
 		printf("2. sequential Processing \n");
 		printf("3. multi Processing \n");
+		printf("4. multi Thread\n");
 		scanf("%d",&choice);
 		if(choice == 1) break;
 		if(choice == 2)
@@ -66,6 +79,16 @@ int main(int argc, char **argv)
 			scanf("%d",&processNum);
 			multiProcessOperation(generation,processNum);
 		}
+		if(choice == 4)
+		{
+			int threadNum=0;
+			printf("How Many Generation ? : ");
+			scanf("%d",&generation);
+			printf("How Many thread ? : ");
+			scanf("%d",&threadNum);
+			multiThreadOperation(generation,threadNum);
+		}
+		
 	}
 
 }
@@ -188,8 +211,122 @@ void multiProcessOperation(int generation,int processnum)
 	gettimeofday(&end,NULL);
 	printf("time : %dus\n",(int)((end.tv_sec - start.tv_sec)*1000000 + 
 				(end.tv_usec - start.tv_usec)));
+	free(child);
+	free(distribution);
 	shmdt(nowMatrix);
 	shmdt(nextMatrix);
+}
+
+void multiThreadOperation(int generation, int threadnum)
+{
+	struct timeval start,end;
+	char **readMatrix;
+	int m = 0; int n = 0;
+
+	gettimeofday(&start,NULL);
+	if((readMatrix = readInputFile(&n,&m)) == NULL)
+	{
+		fprintf(stderr,"Input Matrix file has invailed value\n");
+		exit(1);
+	}
+
+	if(threadnum > m)
+	{
+		fprintf(stderr,"Too Many thread\n");
+		fprintf(stderr,"appropriate thread num is under ROWs number\n");
+		exit(1);
+	}
+
+	int shm_id1; int shm_id2;
+	char **nowMatrix; char **nextMatrix;
+
+	size_t Matrix_size = sizeof_Matrix(m,n,sizeof(char));
+	//shared memory allocate for now Matrix 
+	if((shm_id1 = shmget(NOWMATRIXKEY,Matrix_size,IPC_CREAT|0666)) == -1)
+	{
+		fprintf(stderr,"Get Shared Memory Id Error\n");
+		exit(1);
+	}
+	//shared memory allocate for next Matrix
+	if((shm_id2 = shmget(NEXTMATRIXKEY,Matrix_size,IPC_CREAT|0666)) == -1)
+	{
+		fprintf(stderr,"Get Shared Memory Id Error\n");
+		exit(1);
+	}
+	//get shared memory address
+	if((nowMatrix = shmat(shm_id1,NULL,0)) == (void*)-1)
+	{
+		fprintf(stderr,"Get Shared Memory addr Error\n");
+		exit(1);
+	}
+	if((nextMatrix = shmat(shm_id2,NULL,0)) == (void*)-1)
+	{
+		fprintf(stderr,"Get Shared Memory addr Error\n");
+		exit(1);
+	}
+	//create index of Matrix(2Demtion array)
+	create_index((void*)nowMatrix,m,n,sizeof(char));
+	create_index((void*)nextMatrix,m,n,sizeof(char));
+	
+	initializeSharedMemory(readMatrix,nowMatrix,m,n);
+	initializeSharedMemory(readMatrix,nextMatrix,m,n);
+	deleteMatrix(readMatrix,m);
+
+	pthread_t *tid = malloc(sizeof(pthread_t)*threadnum);
+	struct ThreadArgvs *argv = malloc(sizeof(struct ThreadArgvs)*threadnum);
+	int *distribution = malloc(sizeof(int)*threadnum);
+
+	rowdistribution(distribution,threadnum,m);
+	for(int i = 1; i<=generation; i++)
+	{
+		for(int t = 0; t<threadnum; t++)
+		{
+			if(t > 0)
+				initializeThreadArgv(&argv[t],distribution[t-1],distribution[t],m,n,nowMatrix,nextMatrix);
+			else
+				initializeThreadArgv(&argv[t],0,distribution[t],m,n,nowMatrix,nextMatrix);
+			pthread_create(&tid[t],NULL,threadMethod,&argv[t]);
+		}
+
+		for(int t = 0; t<threadnum; t++)
+		{
+			pthread_join(tid[t],NULL);
+		}
+		printf("main Thread\n");
+		writeMatrixInFile(nextMatrix,m,n,generation);
+		initializeSharedMemory(nextMatrix,nowMatrix,m,n);
+	}
+	gettimeofday(&end,NULL);
+	printf("time : %dus\n",(int)((end.tv_sec - start.tv_sec)*1000000 + 
+				(end.tv_usec - start.tv_usec)));
+
+	free(tid);
+	free(argv);
+	free(distribution);
+	shmdt(nowMatrix);
+	shmdt(nextMatrix);
+
+
+
+}
+
+void initializeThreadArgv(struct ThreadArgvs *ta,int startline,int endline,int m, int n, char **m1,char **m2)
+{
+	ta->startline = startline;
+	ta->endline = endline;
+	ta->rows = m;
+	ta->cols = n;
+	ta->nowMatrix = m1;
+	ta->nextMatrix = m2;
+}
+
+
+void* threadMethod(void* argv)
+{
+	struct ThreadArgvs *ta = (struct ThreadArgvs *)argv;
+	printf("Thread : %u\n",(unsigned int)pthread_self());
+	operation(ta->nowMatrix,ta->nextMatrix,ta->rows,ta->cols,ta->startline,ta->endline);
+	pthread_exit(NULL);
 }
 void initializeSharedMemory(char **originMatrix, char **newMatrix, int rows, int cols)
 {
@@ -443,6 +580,7 @@ void writeMatrixInFile(char **Matrix, int m, int n, int max)
 	}else
 	{
 		makeFileName(filename,"output",-1,".matrix");
+		nowGeneration = 1;
 	}
 
 	if((outputfp = fopen(filename,"w+")) == NULL)
