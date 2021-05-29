@@ -11,11 +11,15 @@
 #include <signal.h>
 #include <semaphore.h>
 
+pthread_barrier_t barrier;
+pthread_barrier_t barrier2;
+
 struct ThreadArgvs{
 	int startline;
 	int endline;
 	int rows;
 	int cols;
+	int generation;
 	char **nowMatrix;
 	char **nextMatrix;
 };
@@ -31,7 +35,6 @@ struct LocationInfo{
 #define NAMEBUFSIZE 512
 void workSignal(int sig)
 {
-	printf("i'm %d\n",getpid());
 }
 void sequentialOperation(int generation);
 void multiProcessOperation(int generation, int processnum);
@@ -54,7 +57,7 @@ void deleteMatrix(char **matrix, int rows);
 void rowdistribution(int *arr,int arrsize,int rows);
 
 
-void initializeThreadArgv(struct ThreadArgvs *ta,int startline,int endline,int m, int n, char **m1,char **m2);
+void initializeThreadArgv(struct ThreadArgvs *ta,int startline,int endline,int m, int n,int generation,char **m1,char **m2);
 void* threadMethod(void* argv);
 
 int main(int argc, char **argv)
@@ -111,11 +114,18 @@ void sequentialOperation(int generation)
 		fprintf(stderr,"Input Matrix File has invailed value\n");
 		exit(1);
 	}
-	if((newMatrix = readInputFile(&n,&m)) == NULL)
+	newMatrix = (char**)malloc(sizeof(char*)*m);
+	for(int i = 0; i<m; i++)
+	{
+		newMatrix[i] = (char*)malloc(sizeof(char)*n);
+	}
+	mymemcpy(newMatrix,nowMatrix,m,n);
+
+	/*if((newMatrix = readInputFile(&n,&m)) == NULL)
 	{
 		fprintf(stderr,"Input Matrix File has invailed value\n");
 		exit(1);
-	}
+	}*/
 
 
 	for(int i = 1; i<=generation; i++)
@@ -192,11 +202,14 @@ void multiProcessOperation(int generation,int processnum)
 	//create index of Matrix(2Demtion array)
 	create_index((void*)nowMatrix,m,n,sizeof(char));
 	create_index((void*)nextMatrix,m,n,sizeof(char));
-	(*counter) = 0;
 	
+	//initialize all shared Memory
 	initializeSharedMemory(readMatrix,nowMatrix,m,n);
 	initializeSharedMemory(readMatrix,nextMatrix,m,n);
 	deleteMatrix(readMatrix,m);
+	(*counter) = 0;
+	
+	//for Synchronize process
 	sem_t mutex;
 	if(sem_init(&mutex,1,1) < 0){
 		fprintf(stderr,"semaphore error");
@@ -210,10 +223,11 @@ void multiProcessOperation(int generation,int processnum)
 	int ischild = 0;
 	int myorder;
 	if(signal(SIGUSR1,workSignal) == SIG_ERR)
-		{
-			fprintf(stderr, "Signal error\n");
-			exit(1);
-		}
+	{
+		fprintf(stderr, "Signal error\n");
+		exit(1);
+	}
+	//create child process 
 	for(int p = 0; p < processnum; p++)
 	{
 		if((child[p] = fork())< 0)
@@ -234,18 +248,17 @@ void multiProcessOperation(int generation,int processnum)
 			break;
 		}
 	}
+	//make generation
 	for(int i = 1; i <= generation; i++)
 	{
 			if(ischild == 1 && myorder > 0){
 				operation(nowMatrix,nextMatrix,m,n,distribution[myorder-1],distribution[myorder]);
-				printf("send %d \n",getpid());
 				sem_wait(&mutex);
 				(*counter)++;
 				sem_post(&mutex);
 				pause();
 			}else if(ischild == 1 && myorder == 0){
 				operation(nowMatrix,nextMatrix,m,n,0,distribution[myorder]);
-				printf("send %d \n",getpid());
 				sem_wait(&mutex);
 				(*counter)++;
 				sem_post(&mutex);
@@ -256,7 +269,7 @@ void multiProcessOperation(int generation,int processnum)
 				//wait for all child finish
 				while(*counter < processnum);
 				*counter = 0;
-				printf("parent \n");
+				//printf("parent \n");
 				writeMatrixInFile(nextMatrix,m,n,generation);
 				initializeSharedMemory(nextMatrix,nowMatrix,m,n);
 				if(i < generation){
@@ -338,30 +351,38 @@ void multiThreadOperation(int generation, int threadnum)
 	initializeSharedMemory(readMatrix,nowMatrix,m,n);
 	initializeSharedMemory(readMatrix,nextMatrix,m,n);
 	deleteMatrix(readMatrix,m);
+	//init barrier
+	int result;
+	result = pthread_barrier_init(&barrier,NULL,threadnum+1);
+	result = pthread_barrier_init(&barrier2,NULL,threadnum+1);
 
 	pthread_t *tid = malloc(sizeof(pthread_t)*threadnum);
 	struct ThreadArgvs *argv = malloc(sizeof(struct ThreadArgvs)*threadnum);
 	int *distribution = malloc(sizeof(int)*threadnum);
 	rowdistribution(distribution,threadnum,m);
 
+	for(int t = 0; t<threadnum; t++)
+	{
+		if(t > 0)
+			initializeThreadArgv(&argv[t],distribution[t-1],distribution[t],m,n,generation,nowMatrix,nextMatrix);
+		else
+			initializeThreadArgv(&argv[t],0,distribution[t],m,n,generation,nowMatrix,nextMatrix);
+		pthread_create(&tid[t],NULL,threadMethod,&argv[t]);
+	}
+
 	for(int i = 1; i<=generation; i++)
 	{
-		for(int t = 0; t<threadnum; t++)
-		{
-			if(t > 0)
-				initializeThreadArgv(&argv[t],distribution[t-1],distribution[t],m,n,nowMatrix,nextMatrix);
-			else
-				initializeThreadArgv(&argv[t],0,distribution[t],m,n,nowMatrix,nextMatrix);
-			pthread_create(&tid[t],NULL,threadMethod,&argv[t]);
-		}
-
-		for(int t = 0; t<threadnum; t++)
-		{
-			pthread_join(tid[t],NULL);
-		}
-		printf("main Thread\n");
+		result = pthread_barrier_wait(&barrier);
 		writeMatrixInFile(nextMatrix,m,n,generation);
 		initializeSharedMemory(nextMatrix,nowMatrix,m,n);
+		result = pthread_barrier_wait(&barrier2);
+
+		if(i == generation){
+			for(int t = 0; t<threadnum; t++)
+			{
+				pthread_join(tid[t],NULL);
+			}
+		}
 	}
 	gettimeofday(&end,NULL);
 	printf("time : %fms\n",(double)((end.tv_sec - start.tv_sec)*1000 + 
@@ -377,12 +398,13 @@ void multiThreadOperation(int generation, int threadnum)
 
 }
 
-void initializeThreadArgv(struct ThreadArgvs *ta,int startline,int endline,int m, int n, char **m1,char **m2)
+void initializeThreadArgv(struct ThreadArgvs *ta,int startline,int endline,int m, int n,int generation, char **m1,char **m2)
 {
 	ta->startline = startline;
 	ta->endline = endline;
 	ta->rows = m;
 	ta->cols = n;
+	ta->generation = generation;
 	ta->nowMatrix = m1;
 	ta->nextMatrix = m2;
 }
@@ -392,6 +414,11 @@ void* threadMethod(void* argv)
 {
 	struct ThreadArgvs *ta = (struct ThreadArgvs *)argv;
 	printf("Thread : %u\n",(unsigned int)pthread_self());
+	for(int i = 0; i< ta->generation; i++){
+		operation(ta->nowMatrix,ta->nextMatrix,ta->rows,ta->cols,ta->startline,ta->endline);
+		pthread_barrier_wait(&barrier);
+		pthread_barrier_wait(&barrier2);
+	}
 	operation(ta->nowMatrix,ta->nextMatrix,ta->rows,ta->cols,ta->startline,ta->endline);
 	pthread_exit(NULL);
 }

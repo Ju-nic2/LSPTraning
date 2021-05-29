@@ -8,6 +8,7 @@
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <pthread.h>
+#include <signal.h>
 
 struct ThreadArgvs{
 	int startline;
@@ -99,12 +100,12 @@ void sequentialOperation(int generation)
 	char **nowMatrix; char **newMatrix;
 	int n=0; int m = 0;
 	gettimeofday(&start,NULL);
+	//initailize metrix
 	if((nowMatrix = readInputFile(&n,&m)) == NULL)
 	{
 		fprintf(stderr,"Input Matrix File has invailed value\n");
 		exit(1);
 	}
-	//initialization
 	if((newMatrix = readInputFile(&n,&m)) == NULL)
 	{
 		fprintf(stderr,"Input Matrix File has invailed value\n");
@@ -120,8 +121,8 @@ void sequentialOperation(int generation)
 		
 	}
 	gettimeofday(&end,NULL);
-	printf("time : %dus\n",(int)((end.tv_sec - start.tv_sec)*1000000 + 
-				(end.tv_usec - start.tv_usec)));
+	printf("time : %fms\n",(double)((end.tv_sec - start.tv_sec)*1000 + 
+				(end.tv_usec - start.tv_usec)/1000));
 }
 
 void multiProcessOperation(int generation,int processnum)
@@ -209,8 +210,8 @@ void multiProcessOperation(int generation,int processnum)
 		initializeSharedMemory(nextMatrix,nowMatrix,m,n);
 	}
 	gettimeofday(&end,NULL);
-	printf("time : %dus\n",(int)((end.tv_sec - start.tv_sec)*1000000 + 
-				(end.tv_usec - start.tv_usec)));
+	printf("time : %fms\n",(double)((end.tv_sec - start.tv_sec)*1000 + 
+				(end.tv_usec - start.tv_usec)/1000));
 	free(child);
 	free(distribution);
 	shmdt(nowMatrix);
@@ -275,8 +276,8 @@ void multiThreadOperation(int generation, int threadnum)
 	pthread_t *tid = malloc(sizeof(pthread_t)*threadnum);
 	struct ThreadArgvs *argv = malloc(sizeof(struct ThreadArgvs)*threadnum);
 	int *distribution = malloc(sizeof(int)*threadnum);
-
 	rowdistribution(distribution,threadnum,m);
+
 	for(int i = 1; i<=generation; i++)
 	{
 		for(int t = 0; t<threadnum; t++)
@@ -297,8 +298,8 @@ void multiThreadOperation(int generation, int threadnum)
 		initializeSharedMemory(nextMatrix,nowMatrix,m,n);
 	}
 	gettimeofday(&end,NULL);
-	printf("time : %dus\n",(int)((end.tv_sec - start.tv_sec)*1000000 + 
-				(end.tv_usec - start.tv_usec)));
+	printf("time : %fms\n",(double)((end.tv_sec - start.tv_sec)*1000 + 
+				(end.tv_usec - start.tv_usec)/1000));
 
 	free(tid);
 	free(argv);
@@ -381,7 +382,6 @@ void operation(char **current, char **next, int m, int n, int startline,int endl
 {
 	struct LocationInfo li;
 	li.m=m; li.n=n;
-
 	for(int i = startline; i < endline; i++)
 	{
 		for(int j = 0; j < n; j++)
