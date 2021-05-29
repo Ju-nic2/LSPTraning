@@ -121,13 +121,6 @@ void sequentialOperation(int generation)
 	}
 	mymemcpy(newMatrix,nowMatrix,m,n);
 
-	/*if((newMatrix = readInputFile(&n,&m)) == NULL)
-	{
-		fprintf(stderr,"Input Matrix File has invailed value\n");
-		exit(1);
-	}*/
-
-
 	for(int i = 1; i<=generation; i++)
 	{
 		operation(nowMatrix, newMatrix,m,n,0,m);
@@ -138,6 +131,8 @@ void sequentialOperation(int generation)
 	gettimeofday(&end,NULL);
 	printf("time : %fms\n",(double)((end.tv_sec - start.tv_sec)*1000 + 
 				(end.tv_usec - start.tv_usec)/1000));
+	deleteMatrix(nowMatrix,m);
+	deleteMatrix(newMatrix,n);
 }
 
 void multiProcessOperation(int generation,int processnum)
@@ -372,10 +367,10 @@ void multiThreadOperation(int generation, int threadnum)
 
 	for(int i = 1; i<=generation; i++)
 	{
-		result = pthread_barrier_wait(&barrier);
+		pthread_barrier_wait(&barrier);
 		writeMatrixInFile(nextMatrix,m,n,generation);
 		initializeSharedMemory(nextMatrix,nowMatrix,m,n);
-		result = pthread_barrier_wait(&barrier2);
+		pthread_barrier_wait(&barrier2);
 
 		if(i == generation){
 			for(int t = 0; t<threadnum; t++)
@@ -419,7 +414,6 @@ void* threadMethod(void* argv)
 		pthread_barrier_wait(&barrier);
 		pthread_barrier_wait(&barrier2);
 	}
-	operation(ta->nowMatrix,ta->nextMatrix,ta->rows,ta->cols,ta->startline,ta->endline);
 	pthread_exit(NULL);
 }
 void initializeSharedMemory(char **originMatrix, char **newMatrix, int rows, int cols)
@@ -673,7 +667,7 @@ void writeMatrixInFile(char **Matrix, int m, int n, int max)
 	}else
 	{
 		makeFileName(filename,"output",-1,".matrix");
-		nowGeneration = 1;
+		nowGeneration = 0;
 	}
 
 	if((outputfp = fopen(filename,"w+")) == NULL)
