@@ -11,9 +11,11 @@
 #include <signal.h>
 #include <semaphore.h>
 
+// barrier for multi thread
 pthread_barrier_t operate_barrier;
 pthread_barrier_t write_barrier;
 
+//Tread Argv
 struct ThreadArgvs{
 	int startline;
 	int endline;
@@ -23,40 +25,49 @@ struct ThreadArgvs{
 	char **nowMatrix;
 	char **nextMatrix;
 };
+//for cell operation location information
 struct LocationInfo{
 	int x;
 	int y;
 	int m;
 	int n;
 };
+
+//shared memory key
 #define NOWMATRIXKEY 1111
 #define NEXTMATRIXKEY 2222
 #define COUNTERKEY 3333
+
+//file name size 
 #define NAMEBUFSIZE 512
+
 void workSignal(int sig)
 {
 }
-void sequentialOperation(int generation);
-void multiProcessOperation(int generation, int processnum);
-void multiThreadOperation(int generation, int threadnum);
+//menu function
+void sequentialOperation(int generation, char *inputfile);
+void multiProcessOperation(int generation, int processnum, char *inputfile);
+void multiThreadOperation(int generation, int threadnum, char *inputfile);
 
-
+//operation function
 void operation(char **current, char **next, int m, int n, int startline,int endline);
 char nextGenerationCell(char **current, struct LocationInfo *now,int flag);
 void mymemcpy(char **copyed, char **origin,int m, int n);
 
-char** readInputFile(int *n, int *m);
+//diskIO function
+char** readInputFile(int *n, int *m, char *filename);
 void writeMatrixInFile(char **Matrix, int m, int n, int max);
 void makeWriteFormat(char* linebuf, char *line,int linesize);
 void makeFileName(char *filename,char *prefix,int num,char *suffix);
 
+//memory function
 unsigned int sizeof_Matrix(int rows, int cols, size_t sizeElement);
 void create_index(void **Matrix,int rows, int cols, size_t sizeElement);
 void initializeSharedMemory(char **originMatrix, char **emptyMatrix,int rows, int cols);
 void deleteMatrix(char **matrix, int rows);
 void rowdistribution(int *arr,int arrsize,int rows);
 
-
+//tread function
 void initializeThreadArgv(struct ThreadArgvs *ta,int startline,int endline,int m, int n,int generation,char **m1,char **m2);
 void* threadMethod(void* argv);
 
@@ -65,20 +76,31 @@ int main(int argc, char **argv)
 	
 	int choice = 0;
 	int generation = 0;
-	printf("**Cell Matrix Game **\n");
+	char *inputfile;
+	if(argc < 2)
+	{
+		inputfile = malloc(sizeof(char) * strlen("input.matrix"));
+		strcpy(inputfile,"input.matrix");
+	}else{
+		inputfile = malloc(sizeof(char) * strlen(argv[1]));
+		strcpy(inputfile,argv[1]);
+	}
+	printf("%s\n",inputfile);
 	while(1)
 	{
+		printf("**Cell Matrix Game **\n");
 		printf("1. exit\n");
 		printf("2. sequential Processing \n");
 		printf("3. multi Processing \n");
 		printf("4. multi Thread\n");
+		printf("Input Menu Number : ");
 		scanf("%d",&choice);
 		if(choice == 1) break;
 		if(choice == 2)
 		{
 			printf("How many Generation ? : ");
 			scanf("%d",&generation);
-			sequentialOperation(generation);
+			sequentialOperation(generation,inputfile);
 		}if(choice == 3)
 		{
 			int processNum=0;
@@ -86,7 +108,7 @@ int main(int argc, char **argv)
 			scanf("%d",&generation);
 			printf("How Many Process ? : ");
 			scanf("%d",&processNum);
-			multiProcessOperation(generation,processNum);
+			multiProcessOperation(generation,processNum,inputfile);
 		}
 		if(choice == 4)
 		{
@@ -95,21 +117,21 @@ int main(int argc, char **argv)
 			scanf("%d",&generation);
 			printf("How Many thread ? : ");
 			scanf("%d",&threadNum);
-			multiThreadOperation(generation,threadNum);
+			multiThreadOperation(generation,threadNum,inputfile);
 		}
 		
 	}
 
 }
 
-void sequentialOperation(int generation)
+void sequentialOperation(int generation, char *inputfile)
 {
 	struct timeval start,end;
 	char **nowMatrix; char **newMatrix;
 	int n=0; int m = 0;
 	gettimeofday(&start,NULL);
 	//initailize metrix
-	if((nowMatrix = readInputFile(&n,&m)) == NULL)
+	if((nowMatrix = readInputFile(&n,&m,inputfile)) == NULL)
 	{
 		fprintf(stderr,"Input Matrix File has invailed value\n");
 		exit(1);
@@ -135,14 +157,14 @@ void sequentialOperation(int generation)
 	deleteMatrix(newMatrix,n);
 }
 
-void multiProcessOperation(int generation,int processnum)
+void multiProcessOperation(int generation,int processnum, char *inputfile)
 {
 	struct timeval start,end;
 	char **readMatrix;
 	int m = 0; int n = 0;
 
 	gettimeofday(&start,NULL);
-	if((readMatrix = readInputFile(&n,&m)) == NULL)
+	if((readMatrix = readInputFile(&n,&m,inputfile)) == NULL)
 	{
 		fprintf(stderr,"Input Matrix file has invailed value\n");
 		exit(1);
@@ -302,14 +324,14 @@ void multiProcessOperation(int generation,int processnum)
 	shmdt(nextMatrix);
 }
 
-void multiThreadOperation(int generation, int threadnum)
+void multiThreadOperation(int generation, int threadnum, char* inputfile)
 {
 	struct timeval start,end;
 	char **readMatrix;
 	int m = 0; int n = 0;
 
 	gettimeofday(&start,NULL);
-	if((readMatrix = readInputFile(&n,&m)) == NULL)
+	if((readMatrix = readInputFile(&n,&m,inputfile)) == NULL)
 	{
 		fprintf(stderr,"Input Matrix file has invailed value\n");
 		exit(1);
@@ -398,8 +420,8 @@ void multiThreadOperation(int generation, int threadnum)
 	free(distribution);
 	shmdt(nowMatrix);
 	shmdt(nextMatrix);
-
-
+	pthread_barrier_destroy(&operate_barrier);
+	pthread_barrier_destroy(&write_barrier);
 
 }
 
@@ -607,11 +629,11 @@ char nextGenerationCell(char **current, struct LocationInfo *now,int flag)
 }
 
 
-char** readInputFile(int *n, int *m)
+char** readInputFile(int *n, int *m, char *inputfile)
 {
 	FILE *inputfp;
 
-	if((inputfp = fopen("input.matrix","r")) == NULL)
+	if((inputfp = fopen(inputfile,"r")) == NULL)
 	{
 		fprintf(stderr,"There are no input file");
 		exit(1);
@@ -656,7 +678,6 @@ char** readInputFile(int *n, int *m)
 			return NULL;
 	}
 
-	printf("%d %d\n",tn,tm);
 	*n = tn/2;
 	*m = tm;
 
@@ -684,6 +705,7 @@ void writeMatrixInFile(char **Matrix, int m, int n, int max)
 	if((outputfp = fopen(filename,"w+")) == NULL)
 	{
 		fprintf(stderr,"file opne error\n");
+		exit(1);
 	}
 	char *linebuf = (char *)malloc(sizeof(char) * (n*2));
 	for(int i = 0; i<m; i++)
@@ -702,7 +724,7 @@ void writeMatrixInFile(char **Matrix, int m, int n, int max)
 void makeFileName(char *filename,char *prefix, int num, char *suffix)
 {
 	//number limit is length of max integer in (int)
-	char numbuffer[10];
+	char numbuffer[11];
 	//only positive number can write in file name
 	if(num > 0)
 		sprintf(numbuffer,"%d",num);
