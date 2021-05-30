@@ -580,7 +580,7 @@ void writeMatrixInFile(char **Matrix, int m, int n, int max)
 	}else
 	{
 		makeFileName(filename,"output",-1,".matrix");
-		nowGeneration = 1;
+		nowGeneration = 0;
 	}
 
 	if((outputfp = fopen(filename,"w+")) == NULL)

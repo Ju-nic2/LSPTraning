@@ -11,8 +11,8 @@
 #include <signal.h>
 #include <semaphore.h>
 
-pthread_barrier_t barrier;
-pthread_barrier_t barrier2;
+pthread_barrier_t operate_barrier;
+pthread_barrier_t write_barrier;
 
 struct ThreadArgvs{
 	int startline;
@@ -40,7 +40,7 @@ void sequentialOperation(int generation);
 void multiProcessOperation(int generation, int processnum);
 void multiThreadOperation(int generation, int threadnum);
 
-//seperate to operation.c
+
 void operation(char **current, char **next, int m, int n, int startline,int endline);
 char nextGenerationCell(char **current, struct LocationInfo *now,int flag);
 void mymemcpy(char **copyed, char **origin,int m, int n);
@@ -239,24 +239,33 @@ void multiProcessOperation(int generation,int processnum)
 			}
 			ischild = 1;
 			myorder = p;
-			printf("%d 's child id : %d pid : %d\n",p,getpid(),getppid());
+			printf("%d 's child id : %d ppid : %d\n",p,getpid(),getppid());
+			if(p > 0)
+				printf("I'll operate %d ~ %d\n",distribution[p-1]+1,distribution[p]);
+			else
+				printf("I'll operate %d ~ %d\n",1,distribution[p]);
 			break;
 		}
 	}
 	//make generation
 	for(int i = 1; i <= generation; i++)
 	{
+			//child process code
 			if(ischild == 1 && myorder > 0){
 				operation(nowMatrix,nextMatrix,m,n,distribution[myorder-1],distribution[myorder]);
+				//for child process synchronize
 				sem_wait(&mutex);
 				(*counter)++;
 				sem_post(&mutex);
+				//wait parent's signal
 				pause();
 			}else if(ischild == 1 && myorder == 0){
 				operation(nowMatrix,nextMatrix,m,n,0,distribution[myorder]);
+				//for child process synchronize
 				sem_wait(&mutex);
 				(*counter)++;
 				sem_post(&mutex);
+				//wait parent's signal
 				pause();
 			}
 			//parent process code
@@ -264,18 +273,19 @@ void multiProcessOperation(int generation,int processnum)
 				//wait for all child finish
 				while(*counter < processnum);
 				*counter = 0;
-				//printf("parent \n");
 				writeMatrixInFile(nextMatrix,m,n,generation);
 				initializeSharedMemory(nextMatrix,nowMatrix,m,n);
 				if(i < generation){
 					for(int j = 0; j<processnum; j++)
 					{
+						//signal to child process "work!"
 						kill(child[j],SIGUSR1);
 					}
 				}
 				else{
 					for(int j = 0; j<processnum; j++)
 					{
+						//siganl to child process "exit"
 						kill(child[j],SIGKILL);
 					}
 
@@ -348,8 +358,8 @@ void multiThreadOperation(int generation, int threadnum)
 	deleteMatrix(readMatrix,m);
 	//init barrier
 	int result;
-	result = pthread_barrier_init(&barrier,NULL,threadnum+1);
-	result = pthread_barrier_init(&barrier2,NULL,threadnum+1);
+	result = pthread_barrier_init(&operate_barrier,NULL,threadnum+1);
+	result = pthread_barrier_init(&write_barrier,NULL,threadnum+1);
 
 	pthread_t *tid = malloc(sizeof(pthread_t)*threadnum);
 	struct ThreadArgvs *argv = malloc(sizeof(struct ThreadArgvs)*threadnum);
@@ -367,10 +377,10 @@ void multiThreadOperation(int generation, int threadnum)
 
 	for(int i = 1; i<=generation; i++)
 	{
-		pthread_barrier_wait(&barrier);
+		pthread_barrier_wait(&operate_barrier);
 		writeMatrixInFile(nextMatrix,m,n,generation);
 		initializeSharedMemory(nextMatrix,nowMatrix,m,n);
-		pthread_barrier_wait(&barrier2);
+		pthread_barrier_wait(&write_barrier);
 
 		if(i == generation){
 			for(int t = 0; t<threadnum; t++)
@@ -409,10 +419,11 @@ void* threadMethod(void* argv)
 {
 	struct ThreadArgvs *ta = (struct ThreadArgvs *)argv;
 	printf("Thread : %u\n",(unsigned int)pthread_self());
+	printf("I'll operate %d ~ %d\n",ta->startline+1,ta->endline);
 	for(int i = 0; i< ta->generation; i++){
 		operation(ta->nowMatrix,ta->nextMatrix,ta->rows,ta->cols,ta->startline,ta->endline);
-		pthread_barrier_wait(&barrier);
-		pthread_barrier_wait(&barrier2);
+		pthread_barrier_wait(&operate_barrier);
+		pthread_barrier_wait(&write_barrier);
 	}
 	pthread_exit(NULL);
 }
