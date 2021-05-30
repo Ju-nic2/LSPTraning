@@ -52,7 +52,6 @@ void multiThreadOperation(int generation, int threadnum, char *inputfile);
 //operation function
 void operation(char **current, char **next, int m, int n, int startline,int endline);
 char nextGenerationCell(char **current, struct LocationInfo *now,int flag);
-void mymemcpy(char **copyed, char **origin,int m, int n);
 
 //diskIO function
 char** readInputFile(int *n, int *m, char *filename);
@@ -66,6 +65,7 @@ void create_index(void **Matrix,int rows, int cols, size_t sizeElement);
 void initializeSharedMemory(char **originMatrix, char **emptyMatrix,int rows, int cols);
 void deleteMatrix(char **matrix, int rows);
 void rowdistribution(int *arr,int arrsize,int rows);
+void mymemcpy(char **copyed, char **origin,int m, int n);
 
 //tread function
 void initializeThreadArgv(struct ThreadArgvs *ta,int startline,int endline,int m, int n,int generation,char **m1,char **m2);
@@ -254,11 +254,6 @@ void multiProcessOperation(int generation,int processnum, char *inputfile)
 		}
 		else if(child[p] == 0)
 		{
-			if(signal(SIGUSR1,workSignal) == SIG_ERR)
-			{
-				fprintf(stderr, "Signal error\n");
-				exit(1);
-			}
 			ischild = 1;
 			myorder = p;
 			printf("%d 's child id : %d ppid : %d\n",p,getpid(),getppid());
@@ -379,9 +374,17 @@ void multiThreadOperation(int generation, int threadnum, char* inputfile)
 	initializeSharedMemory(readMatrix,nextMatrix,m,n);
 	deleteMatrix(readMatrix,m);
 	//init barrier
-	int result;
-	result = pthread_barrier_init(&operate_barrier,NULL,threadnum+1);
-	result = pthread_barrier_init(&write_barrier,NULL,threadnum+1);
+	if(pthread_barrier_init(&operate_barrier,NULL,threadnum+1) != 0)
+	{
+		fprintf(stderr,"operate_barrier init error\n");
+		exit(1);
+	}
+
+	if(pthread_barrier_init(&write_barrier,NULL,threadnum+1) != 0)
+	{
+		fprintf(stderr,"write_barrier init error\n");
+		exit(1);
+	}
 
 	pthread_t *tid = malloc(sizeof(pthread_t)*threadnum);
 	struct ThreadArgvs *argv = malloc(sizeof(struct ThreadArgvs)*threadnum);
@@ -690,7 +693,6 @@ char** readInputFile(int *n, int *m, char *inputfile)
 void writeMatrixInFile(char **Matrix, int m, int n, int max)
 {
 	static int nowGeneration = 1; 
-
 	FILE *outputfp;
 	char filename[NAMEBUFSIZE];
 	if(nowGeneration < max)
@@ -699,6 +701,7 @@ void writeMatrixInFile(char **Matrix, int m, int n, int max)
 	}else
 	{
 		makeFileName(filename,"output",-1,".matrix");
+		printf("%s filename, %d %d\n",filename,nowGeneration,max);
 		nowGeneration = 0;
 	}
 
@@ -728,6 +731,8 @@ void makeFileName(char *filename,char *prefix, int num, char *suffix)
 	//only positive number can write in file name
 	if(num > 0)
 		sprintf(numbuffer,"%d",num);
+	else
+		numbuffer[0] = '\0';
 
 	strncpy(filename,prefix,strlen(prefix));
 	strncpy(&filename[strlen(prefix)],numbuffer,strlen(numbuffer));
