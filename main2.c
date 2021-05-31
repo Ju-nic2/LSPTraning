@@ -85,7 +85,7 @@ int main(int argc, char **argv)
 		inputfile = malloc(sizeof(char) * strlen(argv[1]));
 		strcpy(inputfile,argv[1]);
 	}
-	printf("%s\n",inputfile);
+	printf("Your Input FIle is %s\n",inputfile);
 	while(1)
 	{
 		printf("**Cell Matrix Game **\n");
@@ -701,7 +701,6 @@ void writeMatrixInFile(char **Matrix, int m, int n, int max)
 	}else
 	{
 		makeFileName(filename,"output",-1,".matrix");
-		printf("%s filename, %d %d\n",filename,nowGeneration,max);
 		nowGeneration = 0;
 	}
 
@@ -727,12 +726,10 @@ void writeMatrixInFile(char **Matrix, int m, int n, int max)
 void makeFileName(char *filename,char *prefix, int num, char *suffix)
 {
 	//number limit is length of max integer in (int)
-	char numbuffer[11];
+	char numbuffer[11] = {'\0',};
 	//only positive number can write in file name
 	if(num > 0)
 		sprintf(numbuffer,"%d",num);
-	else
-		numbuffer[0] = '\0';
 
 	strncpy(filename,prefix,strlen(prefix));
 	strncpy(&filename[strlen(prefix)],numbuffer,strlen(numbuffer));
