@@ -17,8 +17,8 @@ Intel® Core™ i5-10210U Processor(1.60 GHz up to 4.20 GHz 6 MB L3 Cache)
 4core 할당, 8GB RAM 
 
 ### 공통 사항 
-OS : Ubunto 20.04
-Compiler gcc
+OS : Ubunto 20.04   
+Compiler : gcc
 
 ### 예외처리
 Shared memory 예외 : shared memory 할당에 실패할 경우.   
